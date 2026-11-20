@@ -1,0 +1,6 @@
+venv/
+.env
+bridge.log
+telemetry.csv
+__pycache__/
+*.pyc
