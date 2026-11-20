@@ -1,3 +1,4 @@
+import csv
 import logging
 import os
 import re
@@ -22,6 +23,8 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 EMAIL_TO = os.getenv("EMAIL_TO", "")
 
+TELEMETRY_FILE = "telemetry.csv"
+
 RE_ALERT = re.compile(r"^ALERT,(\d+)$")
 RE_CPU = re.compile(r"^cpu=(\d+)%$")
 
@@ -34,6 +37,21 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger("bridge")
+
+
+def init_telemetry():
+    """Repart d'un fichier propre à chaque lancement."""
+    with open(TELEMETRY_FILE, "w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow(["timestamp", "cpu", "alert"])
+
+
+def append_telemetry(cpu, alert):
+    try:
+        with open(TELEMETRY_FILE, "a", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerow(
+                [datetime.now().strftime("%H:%M:%S"), cpu, alert])
+    except OSError as e:
+        log.debug("Écriture telemetry impossible: %s", e)
 
 
 def send_email(alert_value, cpu):
@@ -81,12 +99,14 @@ def handle_line(line, state):
     if m:
         state["cpu"] = int(m.group(1))
         log.info("CPU = %d%%", state["cpu"])
+        append_telemetry(state["cpu"], 0)
         return
 
     m = RE_ALERT.match(line)
     if m:
         value = int(m.group(1))
         log.warning("ALERT reçu (valeur=%d, cpu=%s)", value, state["cpu"])
+        append_telemetry(state["cpu"] if state["cpu"] is not None else 0, 1)
         now = time.time()
         if now - state["last_email"] >= COOLDOWN:
             if send_email(value, state["cpu"]):
@@ -100,6 +120,7 @@ def handle_line(line, state):
 
 
 def run():
+    init_telemetry()
     state = {"cpu": None, "last_email": 0.0}
     while True:
         try:
